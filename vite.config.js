@@ -5,5 +5,5 @@ export default defineConfig({
   plugins: [react()],
   // GitHub Pages のリポジトリ名に合わせて変更してください
   // 例: リポジトリ名が "family-tree" なら '/family-tree/'
-  base: '/family-tree/',
+  base: '/flamily_tree2/',
 });
