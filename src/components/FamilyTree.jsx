@@ -108,28 +108,83 @@ function FamilyTreeInner() {
   }, [getNodes, getEdges]);
 
   // ── JSON インポート ─────────────────────────────
+  // position・style サイズなどレイアウト依存情報は捨て、
+  // ツリー構造・プロパティだけを復元してからレイアウトを再計算する。
   const handleImport = useCallback((e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // 同じファイルを再選択できるようリセット
-    e.target.value = '';
+    e.target.value = ''; // 同じファイルを再選択できるようリセット
 
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const { nodes: importedNodes, edges: importedEdges } = JSON.parse(ev.target.result);
-        if (!Array.isArray(importedNodes) || !Array.isArray(importedEdges)) {
+        const { nodes: raw, edges: rawEdges } = JSON.parse(ev.target.result);
+        if (!Array.isArray(raw) || !Array.isArray(rawEdges)) {
           throw new Error('nodes / edges が配列ではありません');
         }
-        setNodes(importedNodes);
-        setEdges(importedEdges);
-        setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 50);
+
+        // ── ノード再構築 ─────────────────────────────
+        // 保持: id, type, data, parentId, extent（構造情報）
+        // 除去: position, style の width/height, measured, internals など
+        // 各ノード種別に応じて現在の定数で位置・スタイルを上書きする
+        const cleanNodes = raw.map((node) => {
+          const base = {
+            id:   node.id,
+            type: node.type,
+            data: node.data ?? {},
+            ...(node.parentId
+              ? { parentId: node.parentId, extent: node.extent ?? 'parent' }
+              : {}),
+          };
+
+          if (node.type === 'marriageGroup') {
+            return {
+              ...base,
+              position: { x: 0, y: 0 }, // ELK が決定
+              style: { width: MARRIAGE_GROUP.WIDTH, height: MARRIAGE_GROUP.HEIGHT },
+            };
+          }
+          if (node.type === 'couple') {
+            return {
+              ...base,
+              position: { ...INNER.couple },
+              style: { pointerEvents: 'none' },
+            };
+          }
+          if (node.type === 'person' && node.parentId) {
+            // グループ内: 性別で妻（左）・夫（右）の相対位置を決定
+            const pos = node.data?.gender === 'female' ? INNER.wife : INNER.husband;
+            return {
+              ...base,
+              position: { ...pos },
+              style: { pointerEvents: 'none' },
+            };
+          }
+          // 単独 person・その他
+          return { ...base, position: { x: 0, y: 0 } };
+        });
+
+        // ── エッジ再構築 ─────────────────────────────
+        // 保持: 接続情報のみ。style は種別に応じてデフォルト値を付与
+        const cleanEdges = rawEdges.map((e) => ({
+          id:     e.id,
+          source: e.source,
+          target: e.target,
+          type:   e.type,
+          ...(e.sourceHandle ? { sourceHandle: e.sourceHandle } : {}),
+          ...(e.targetHandle ? { targetHandle: e.targetHandle } : {}),
+          ...(e.type === 'parentChild' ? { style: { strokeWidth: 2 } } : {}),
+        }));
+
+        // エッジをセットしてからレイアウトを再計算
+        setEdges(cleanEdges);
+        runLayout(cleanNodes, cleanEdges);
       } catch (err) {
         alert(`インポートに失敗しました:\n${err.message}`);
       }
     };
     reader.readAsText(file);
-  }, [setNodes, setEdges, fitView]);
+  }, [setEdges, runLayout]);
 
   // 整列ボタン（通常）
   const handleRelayout = useCallback(() => {
@@ -155,6 +210,16 @@ function FamilyTreeInner() {
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+  }, []);
+
+  // ── 複数選択変化 ─────────────────────────────────
+  // Ctrl+クリックで複数選択になった際、選択が 2 件以上になったら
+  // サイドバーの単一ノード表示をクリアする（エッジ選択は維持しない）
+  const onSelectionChange = useCallback(({ nodes: sel }) => {
+    if (sel.length >= 2) {
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+    }
   }, []);
 
   // ── エッジ変更（婚姻エッジ削除 → グループ解体） ──────
@@ -606,6 +671,8 @@ function FamilyTreeInner() {
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
+        onSelectionChange={onSelectionChange}
+        multiSelectionKeyCode="Control"
         fitView
         fitViewOptions={{ padding: 0.3 }}
         minZoom={0.3}

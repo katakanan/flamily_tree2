@@ -27,14 +27,14 @@
  */
 
 export const MARRIAGE_GROUP = {
-  WIDTH:  214,
-  HEIGHT: 120,
+  WIDTH:  186,  // wife(68) + gap(50) + husband(68)
+  HEIGHT: 168,  // person minHeight
 };
 
 export const INNER = {
-  wife:    { x: 0,   y: 0  },
-  couple:  { x: 107, y: 59.5 },  // (120 - 1) / 2 = 59.5 → PersonNode中心Y=60に合わせる
-  husband: { x: 134, y: 0  },
+  wife:    { x: 0,   y: 0    },
+  couple:  { x: 93,  y: 83.5 },  // (186-1)/2=92.5≈93, (168-1)/2=83.5
+  husband: { x: 118, y: 0    },  // wife(68) + gap(50)
 };
 
 const groupStyle   = { width: MARRIAGE_GROUP.WIDTH, height: MARRIAGE_GROUP.HEIGHT };
@@ -190,7 +190,7 @@ export const initialNodes = [
   },
 
   // ══════════════════════════════════════════
-  // 世代 0: もずく（波平の親）
+  // 世代 -1: もずく（波平の親）
   // ══════════════════════════════════════════
   {
     id: 'mozuku',
@@ -198,7 +198,7 @@ export const initialNodes = [
     data: {
       name: 'もずく',
       gender: 'male',
-      generation: 0,
+      generation: -1,
       description: '波平の親。',
       children: ['namihei', 'umihei', 'namiheiimoto'],
     },

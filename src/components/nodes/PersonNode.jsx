@@ -21,8 +21,8 @@ export default function PersonNode({ data, selected }) {
   return (
     <div
       style={{
-        width: 80,
-        minHeight: 120,
+        width: 68,
+        minHeight: 168,
         ...style,
         borderRadius: 6,
         display: 'flex',
@@ -73,9 +73,9 @@ export default function PersonNode({ data, selected }) {
           justifyContent: 'center',
           writingMode: 'vertical-rl',
           textOrientation: 'upright',
-          fontSize: 22,
+          fontSize: 16,
           fontWeight: 'bold',
-          padding: '14px 0',
+          padding: '12px 0',
         }}
       >
         {data.name}

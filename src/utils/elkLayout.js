@@ -4,7 +4,7 @@ const elk = new ELK();
 
 // 単体ノードのデフォルトサイズ（PersonNodeの minHeight に合わせる）
 const NODE_SIZE = {
-  person: { width: 80, height: 120 },
+  person: { width: 68, height: 168 },
   couple: { width: 1,  height: 1   },
 };
 
