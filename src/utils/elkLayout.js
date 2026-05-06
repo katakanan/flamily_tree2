@@ -37,64 +37,18 @@ function resolveElkId(nodeId, nodeMap) {
  * レイアウト結果はトップレベルノードのみに適用し、
  * ネストノードの相対座標はそのまま保持する。
  */
-/**
- * @param {object[]} nodes
- * @param {object[]} edges
- * @param {string|null} priorityRootId
- *   指定した場合、そのノードを頂点とする子孫ツリーを
- *   ELK の children 配列の先頭に並べる（左側優先配置のヒントになる）。
- */
-export async function applyElkLayout(nodes, edges, priorityRootId = null) {
+export async function applyElkLayout(nodes, edges) {
   // ノードを素早く引けるようにマップ化
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
   // トップレベルノード（parentId なし）だけ ELK に渡す
   const topLevel = nodes.filter((n) => !n.parentId);
 
-  // ── 優先ツリーの子孫セットを BFS で構築 ────────────────
-  const prioritySet = new Set(); // トップレベルノードの ID のみ格納
-  if (priorityRootId) {
-    // couple ノード → 親グループ ID
-    const coupleToGroupLocal = new Map();
-    for (const n of nodes) {
-      if (n.type === 'couple' && n.parentId) coupleToGroupLocal.set(n.id, n.parentId);
-    }
-    // parentChild エッジから 親ID → 子IDリスト
-    const childrenMap = new Map();
-    for (const edge of edges) {
-      if (edge.type !== 'parentChild') continue;
-      const pid = coupleToGroupLocal.get(edge.source) ?? edge.source;
-      if (!childrenMap.has(pid)) childrenMap.set(pid, []);
-      childrenMap.get(pid).push(edge.target);
-    }
-    // 選択ノードをトップレベルに解決してから BFS
-    const prNode  = nodeMap.get(priorityRootId);
-    const prTopId = prNode?.parentId ?? priorityRootId;
-    const queue   = [prTopId];
-    while (queue.length > 0) {
-      const id = queue.shift();
-      if (prioritySet.has(id)) continue;
-      prioritySet.add(id);
-      for (const childId of (childrenMap.get(id) ?? [])) {
-        const cn      = nodeMap.get(childId);
-        const topCId  = cn?.parentId ?? childId;
-        if (!prioritySet.has(topCId)) queue.push(topCId);
-      }
-    }
-  }
-
-  // ELK に渡す順序のヒント:
-  //   ① 優先ツリーのノードを先頭に（左側に配置されやすい）
-  //   ② 同じグループ・同じ世代内では生年月順（若い順が左）
+  // ELK に渡す順序のヒント: 世代順 → 生年月順（若い順 = 左）
   const topLevelSorted = [...topLevel].sort((a, b) => {
     const ga = a.data?.generation ?? 0;
     const gb = b.data?.generation ?? 0;
     if (ga !== gb) return ga - gb;
-    // 優先ツリー内を先に
-    const ap = prioritySet.has(a.id) ? 0 : 1;
-    const bp = prioritySet.has(b.id) ? 0 : 1;
-    if (ap !== bp) return ap - bp;
-    // 同グループ内では生年月（若い順 = 左）
     const ayKnown = a.data?.birthYear != null;
     const byKnown = b.data?.birthYear != null;
     if (!ayKnown && !byKnown) return 0;
@@ -227,29 +181,26 @@ export async function applyElkLayout(nodes, edges, priorityRootId = null) {
     return { ...node, position: { ...node.position, x: xFixMap.get(node.id) } };
   });
 
-  // ⑤ 同じ親を持つ兄弟ノードを生年月順（早い順 = 右）に並べる
-  //    ・X 座標の集合はそのまま保ち、順番だけを入れ替える。
-  //    ・生年月不明のノードは末尾（左側）に回す。
+  // ⑤ 同じ親を持つ兄弟ノードをコンパクトに集約し、生年月順（早い = 右）で配置する
+  //    ・現在の重心 X を保ちながら幅 + H_GAP で詰め直す。
+  //    ・生年月不明のノードは左側（末尾）に回す。
   //    ・グループ内の person を子とする場合はグループを代表ノードとして扱う。
   const posMapFinal = new Map(afterXFix.map((n) => [n.id, n]));
 
-  // couple ノード → 親グループ ID
   const coupleToGroupFinal = new Map();
   for (const n of afterXFix) {
     if (n.type === 'couple' && n.parentId) coupleToGroupFinal.set(n.id, n.parentId);
   }
 
   // parentChild エッジから 親ID → 兄弟情報リスト を構築
-  const siblingGroups = new Map(); // parentId → [{repId, birthYear, birthMonth}]
+  const siblingGroups = new Map();
   for (const edge of edges) {
     if (edge.type !== 'parentChild') continue;
     const parentId = coupleToGroupFinal.get(edge.source) ?? edge.source;
     const childNode = posMapFinal.get(edge.target);
     if (!childNode) continue;
-    // グループ内の person はそのグループを位置の代表とする
     const repId   = childNode.parentId ?? edge.target;
     const repNode = posMapFinal.get(repId);
-    // 代表ノードがトップレベルでなければスキップ
     if (!repNode || repNode.parentId) continue;
 
     if (!siblingGroups.has(parentId)) siblingGroups.set(parentId, []);
@@ -260,12 +211,12 @@ export async function applyElkLayout(nodes, edges, priorityRootId = null) {
     });
   }
 
-  const birthOrderMap = new Map(); // repId → 新 X
+  const compactMap = new Map(); // repId → 新 X
 
   for (const siblings of siblingGroups.values()) {
     if (siblings.length < 2) continue;
 
-    // 同じ repId の重複を除去（同グループ内に複数の子がいるケース）
+    // 重複 repId を除去
     const seen = new Set();
     const unique = siblings.filter((s) => {
       if (seen.has(s.repId)) return false;
@@ -274,31 +225,149 @@ export async function applyElkLayout(nodes, edges, priorityRootId = null) {
     });
     if (unique.length < 2) continue;
 
-    // 現在の X 座標を降順ソート（大 = 右 が先頭）
-    const xValues = unique
-      .map((s) => posMapFinal.get(s.repId)?.position.x ?? 0)
-      .sort((a, b) => b - a);
-
-    // 生年月の昇順ソート（早い = 右 = xValues[0]）、不明は末尾（左）
+    // 生年月の昇順ソート（早い = 右）、不明は左（末尾）
     const sorted = [...unique].sort((a, b) => {
-      const aKnown = a.birthYear != null;
-      const bKnown = b.birthYear != null;
-      if (!aKnown && !bKnown) return 0;
-      if (!aKnown) return  1; // 不明は後ろ（左）
-      if (!bKnown) return -1;
+      const aK = a.birthYear != null;
+      const bK = b.birthYear != null;
+      if (!aK && !bK) return 0;
+      if (!aK) return  1;
+      if (!bK) return -1;
       if (a.birthYear !== b.birthYear) return a.birthYear - b.birthYear;
       return (a.birthMonth ?? 0) - (b.birthMonth ?? 0);
     });
 
-    // ソート結果に従って X を割り当て
-    sorted.forEach((sib, i) => {
-      const currentX = posMapFinal.get(sib.repId)?.position.x ?? 0;
-      if (xValues[i] !== currentX) birthOrderMap.set(sib.repId, xValues[i]);
-    });
+    // 現在の重心 X（各ノード中心の平均）
+    const centerX = unique.reduce((sum, s) => {
+      const n = posMapFinal.get(s.repId);
+      return sum + (n?.position.x ?? 0) + getElkSize(n).width / 2;
+    }, 0) / unique.length;
+
+    // コンパクト総幅 = Σ幅 + ギャップ × (n-1)
+    const totalW = sorted.reduce(
+      (sum, s) => sum + getElkSize(posMapFinal.get(s.repId)).width,
+      0
+    ) + H_GAP * (sorted.length - 1);
+
+    // 右端から割り当て（sorted[0] = 最古 = 一番右）
+    let x = centerX + totalW / 2;
+    for (const sib of sorted) {
+      const w = getElkSize(posMapFinal.get(sib.repId)).width;
+      x -= w;
+      compactMap.set(sib.repId, x);
+      x -= H_GAP;
+    }
   }
 
-  return afterXFix.map((node) => {
-    if (!birthOrderMap.has(node.id)) return node;
-    return { ...node, position: { ...node.position, x: birthOrderMap.get(node.id) } };
+  const afterCompact = afterXFix.map((node) => {
+    if (!compactMap.has(node.id)) return node;
+    return { ...node, position: { ...node.position, x: compactMap.get(node.id) } };
+  });
+
+  // ⑥ コンパクト後の X 重複を再解消
+  const genGroupsPost = new Map();
+  for (const node of afterCompact) {
+    if (node.parentId) continue;
+    const gen = node.data?.generation;
+    if (gen == null) continue;
+    if (!genGroupsPost.has(gen)) genGroupsPost.set(gen, []);
+    genGroupsPost.get(gen).push(node);
+  }
+
+  const xFixMap2 = new Map();
+  for (const nodeList of genGroupsPost.values()) {
+    const sorted2 = [...nodeList].sort((a, b) => a.position.x - b.position.x);
+    let nextMinX = -Infinity;
+    for (const node of sorted2) {
+      const x = Math.max(node.position.x, nextMinX);
+      if (x !== node.position.x) xFixMap2.set(node.id, x);
+      nextMinX = x + getElkSize(node).width + H_GAP;
+    }
+  }
+
+  const step6 = afterCompact.map((node) => {
+    if (!xFixMap2.has(node.id)) return node;
+    return { ...node, position: { ...node.position, x: xFixMap2.get(node.id) } };
+  });
+
+  // ⑦ 親の X 座標を子の重心に合わせる
+  //    parentChild エッジを元に「親の代表ノード → 子の代表ノード一覧」を構築し、
+  //    子の中心 X 平均（重心）に親を移動する。
+  //    世代が深い親から処理することで、孫を持つ祖父母まで整合させる。
+  const pos7 = new Map(step6.map((n) => [n.id, n]));
+
+  const coupleToGroup7 = new Map();
+  for (const n of step6) {
+    if (n.type === 'couple' && n.parentId) coupleToGroup7.set(n.id, n.parentId);
+  }
+
+  // 親の代表 ID → 子の代表 ID セット
+  const parentToChildReps7 = new Map();
+  for (const edge of edges) {
+    if (edge.type !== 'parentChild') continue;
+    const parentRepId = coupleToGroup7.get(edge.source) ?? edge.source;
+    const childNode = pos7.get(edge.target);
+    if (!childNode) continue;
+    const childRepId = childNode.parentId ?? edge.target;
+    const childRepNode = pos7.get(childRepId);
+    if (!childRepNode || childRepNode.parentId) continue;
+    if (!parentToChildReps7.has(parentRepId)) parentToChildReps7.set(parentRepId, new Set());
+    parentToChildReps7.get(parentRepId).add(childRepId);
+  }
+
+  // 世代の深い順（子孫側から先祖側へ）に処理する
+  const parentsSortedByGenDesc = [...parentToChildReps7.keys()].sort((a, b) => {
+    const ga = pos7.get(a)?.data?.generation ?? 0;
+    const gb = pos7.get(b)?.data?.generation ?? 0;
+    return gb - ga;
+  });
+
+  const parentAlignMap7 = new Map();
+  for (const parentId of parentsSortedByGenDesc) {
+    const childIdSet = parentToChildReps7.get(parentId);
+    const parentNode = pos7.get(parentId);
+    if (!parentNode) continue;
+
+    const childCenters = [...childIdSet]
+      .map((id) => pos7.get(id))
+      .filter(Boolean)
+      .map((n) => n.position.x + getElkSize(n).width / 2);
+    if (childCenters.length === 0) continue;
+
+    const centroid = childCenters.reduce((a, b) => a + b, 0) / childCenters.length;
+    const newX = centroid - getElkSize(parentNode).width / 2;
+    parentAlignMap7.set(parentId, newX);
+    // pos7 を更新して上位世代の計算に反映させる
+    pos7.set(parentId, { ...parentNode, position: { ...parentNode.position, x: newX } });
+  }
+
+  const afterParentAlign = step6.map((node) => {
+    if (!parentAlignMap7.has(node.id)) return node;
+    return { ...node, position: { ...node.position, x: parentAlignMap7.get(node.id) } };
+  });
+
+  // ⑧ 親整列後の X 重複を再解消
+  const genGroupsFinal8 = new Map();
+  for (const node of afterParentAlign) {
+    if (node.parentId) continue;
+    const gen = node.data?.generation;
+    if (gen == null) continue;
+    if (!genGroupsFinal8.has(gen)) genGroupsFinal8.set(gen, []);
+    genGroupsFinal8.get(gen).push(node);
+  }
+
+  const xFixMap3 = new Map();
+  for (const nodeList of genGroupsFinal8.values()) {
+    const sorted3 = [...nodeList].sort((a, b) => a.position.x - b.position.x);
+    let nextMinX = -Infinity;
+    for (const node of sorted3) {
+      const x = Math.max(node.position.x, nextMinX);
+      if (x !== node.position.x) xFixMap3.set(node.id, x);
+      nextMinX = x + getElkSize(node).width + H_GAP;
+    }
+  }
+
+  return afterParentAlign.map((node) => {
+    if (!xFixMap3.has(node.id)) return node;
+    return { ...node, position: { ...node.position, x: xFixMap3.get(node.id) } };
   });
 }

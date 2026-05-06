@@ -332,38 +332,6 @@ export const initialNodes = [
   },
 
   // ══════════════════════════════════════════
-  // 世代 -1: 石田家（鯛造・舟・フネの弟の親族）
-  // ══════════════════════════════════════════
-  {
-    id: 'ishidake',
-    type: 'person',
-    data: {
-      name: '石田家',
-      gender: 'child',
-      generation: -1,
-      description: '石田家。鯛造・舟・フネの弟の親族。',
-      children: ['taizou', 'fune', 'funeotouto'],
-    },
-    position: { x: 0, y: 0 },
-  },
-
-  // ══════════════════════════════════════════
-  // 世代 -1: 波野家（タイコの親の家系）
-  // ══════════════════════════════════════════
-  {
-    id: 'hanoke',
-    type: 'person',
-    data: {
-      name: '波野家',
-      gender: 'child',
-      generation: -1,
-      description: '波野家。ノリスケの親の家系。',
-      children: ['norisukeoya'],
-    },
-    position: { x: 0, y: 0 },
-  },
-
-  // ══════════════════════════════════════════
   // 世代 0: マスオ父 & マスオ母
   // ══════════════════════════════════════════
   {
@@ -412,39 +380,18 @@ export const initialNodes = [
   },
 
   // ══════════════════════════════════════════
-  // 世代 -1: フグ田家（マスオ父の家系）
+  // 世代 1: 伊佐坂ノリスケ & タイコ
   // ══════════════════════════════════════════
   {
-    id: 'fugutagake',
-    type: 'person',
+    id: 'group-norisuke-taiko',
+    type: 'marriageGroup',
     data: {
-      name: 'フグ田家',
-      gender: 'child',
-      generation: -1,
-      description: 'フグ田家。マスオ父の家系。',
-      children: ['masuochichi'],
-    },
-    position: { x: 0, y: 0 },
-  },
-
-  // ══════════════════════════════════════════
-  // 世代 1: 伊佐坂ノリスケ
-  // ══════════════════════════════════════════
-  {
-    id: 'norisuke',
-    type: 'person',
-    data: {
-      name: 'ノリスケ',
-      gender: 'male',
       generation: 1,
-      description: '伊佐坂家の主人。マスオの友人。',
+      children: ['ikura'],
     },
     position: { x: 0, y: 0 },
+    style: groupStyle,
   },
-
-  // ══════════════════════════════════════════
-  // 世代 1: 伊佐坂タイコ
-  // ══════════════════════════════════════════
   {
     id: 'taiko',
     type: 'person',
@@ -454,7 +401,30 @@ export const initialNodes = [
       generation: 1,
       description: 'ノリスケの妻。',
     },
-    position: { x: 0, y: 0 },
+    position: INNER.wife,
+    parentId: 'group-norisuke-taiko',
+    ...innerProps,
+  },
+  {
+    id: 'couple-norisuke-taiko',
+    type: 'couple',
+    data: {},
+    position: INNER.couple,
+    parentId: 'group-norisuke-taiko',
+    ...innerProps,
+  },
+  {
+    id: 'norisuke',
+    type: 'person',
+    data: {
+      name: 'ノリスケ',
+      gender: 'male',
+      generation: 1,
+      description: '伊佐坂家の主人。マスオの友人。',
+    },
+    position: INNER.husband,
+    parentId: 'group-norisuke-taiko',
+    ...innerProps,
   },
 
   // ══════════════════════════════════════════
@@ -546,6 +516,20 @@ export const initialEdges = [
     id: 'e-masuochichi-couple-masuo',
     source: 'masuochichi',                        sourceHandle: 'left',
     target: 'couple-masuochichi-masuohaha',       targetHandle: 'right',
+    type: 'marriage',
+  },
+
+  // ノリスケ & タイコ の婚姻線
+  {
+    id: 'e-taiko-couple-norisuke',
+    source: 'taiko',                  sourceHandle: 'right',
+    target: 'couple-norisuke-taiko',  targetHandle: 'left',
+    type: 'marriage',
+  },
+  {
+    id: 'e-norisuke-couple-norisuke',
+    source: 'norisuke',               sourceHandle: 'left',
+    target: 'couple-norisuke-taiko',  targetHandle: 'right',
     type: 'marriage',
   },
 ];

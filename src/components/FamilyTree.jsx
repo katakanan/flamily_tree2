@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -68,6 +68,7 @@ function FamilyTreeInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(allEdges);
   const [loading,        setLoading]        = useState(true);
+  const importInputRef = useRef(null); // 隠しファイル入力（JSON インポート用）
   const [layouting,      setLayouting]      = useState(false);
   const [sidebarOpen,    setSidebarOpen]    = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -80,9 +81,9 @@ function FamilyTreeInner() {
   const selectedEdge = edges.find(e => e.id === selectedEdgeId) ?? null;
 
   // ── ELK レイアウト実行 ────────────────────────────
-  const runLayout = useCallback((targetNodes, targetEdges, priorityRootId = null) => {
+  const runLayout = useCallback((targetNodes, targetEdges) => {
     setLayouting(true);
-    applyElkLayout(targetNodes, targetEdges, priorityRootId)
+    applyElkLayout(targetNodes, targetEdges)
       .then((laidNodes) => {
         setNodes(laidNodes);
         setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 50);
@@ -94,16 +95,46 @@ function FamilyTreeInner() {
   // 初回マウント
   useEffect(() => { runLayout(initialNodes, allEdges); }, []);
 
+  // ── JSON エクスポート ─────────────────────────────
+  const handleExport = useCallback(() => {
+    const data = JSON.stringify({ nodes: getNodes(), edges: getEdges() }, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `family-tree-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [getNodes, getEdges]);
+
+  // ── JSON インポート ─────────────────────────────
+  const handleImport = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // 同じファイルを再選択できるようリセット
+    e.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const { nodes: importedNodes, edges: importedEdges } = JSON.parse(ev.target.result);
+        if (!Array.isArray(importedNodes) || !Array.isArray(importedEdges)) {
+          throw new Error('nodes / edges が配列ではありません');
+        }
+        setNodes(importedNodes);
+        setEdges(importedEdges);
+        setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 50);
+      } catch (err) {
+        alert(`インポートに失敗しました:\n${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+  }, [setNodes, setEdges, fitView]);
+
   // 整列ボタン（通常）
   const handleRelayout = useCallback(() => {
     setNodes(cur => { runLayout(cur, edges); return cur; });
   }, [edges, runLayout]);
-
-  // 優先配置ボタン: 選択ノードのツリーを左側優先に整列
-  const handlePriorityLayout = useCallback(() => {
-    if (!selectedNode) return;
-    setNodes(cur => { runLayout(cur, edges, selectedNode.id); return cur; });
-  }, [selectedNode, edges, runLayout]);
 
   // ── ノード選択 ───────────────────────────────────
   const onNodeClick = useCallback((_, node) => {
@@ -593,7 +624,7 @@ function FamilyTreeInner() {
           }}
         />
 
-        {/* 自動整列 / ノード追加ボタン（左上） */}
+        {/* 自動整列 / ノード追加 / Import・Export ボタン（左上） */}
         <Panel position="top-left">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <button
@@ -620,6 +651,42 @@ function FamilyTreeInner() {
             >
               ＋ ノード追加
             </button>
+
+            {/* 区切り線 */}
+            <div style={{ borderTop: '1px solid #ddd', margin: '2px 0' }} />
+
+            {/* エクスポート */}
+            <button
+              onClick={handleExport}
+              style={{
+                padding: '8px 16px', fontSize: 14, fontFamily: 'inherit',
+                background: '#fff', color: '#333',
+                border: '1px solid #ddd', borderRadius: 6,
+                cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+              }}
+            >
+              ↓ エクスポート
+            </button>
+
+            {/* インポート（隠し input をトリガー） */}
+            <button
+              onClick={() => importInputRef.current?.click()}
+              style={{
+                padding: '8px 16px', fontSize: 14, fontFamily: 'inherit',
+                background: '#fff', color: '#333',
+                border: '1px solid #ddd', borderRadius: 6,
+                cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+              }}
+            >
+              ↑ インポート
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={handleImport}
+            />
           </div>
         </Panel>
 
@@ -646,7 +713,6 @@ function FamilyTreeInner() {
         onClose={() => setSidebarOpen(false)}
         onUpdate={handleNodeUpdate}
         onPropagateGeneration={handlePropagateGeneration}
-        onPriorityLayout={handlePriorityLayout}
       />
 
       {/* ノード追加ダイアログ */}

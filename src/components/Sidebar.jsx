@@ -389,7 +389,7 @@ function EdgeInfo({ edge, allNodes }) {
 }
 
 // ── メインコンポーネント ──────────────────────────────
-export default function Sidebar({ open, selectedNode, selectedEdge, allNodes, onClose, onUpdate, onPropagateGeneration, onPriorityLayout }) {
+export default function Sidebar({ open, selectedNode, selectedEdge, allNodes, onClose, onUpdate, onPropagateGeneration }) {
   const spouseNodes = selectedNode?.type === 'marriageGroup'
     ? [...allNodes.filter(n => n.parentId === selectedNode.id && n.type === 'person')]
         .sort((a, b) => (a.data.gender === 'female' ? -1 : 1))
@@ -467,28 +467,6 @@ export default function Sidebar({ open, selectedNode, selectedEdge, allNodes, on
                 子ノード +1、親ノード −1 で更新します
               </div>
 
-              <button
-                onClick={onPriorityLayout}
-                style={{
-                  width: '100%',
-                  marginTop: 10,
-                  padding: '8px 12px',
-                  fontSize: 13,
-                  fontFamily: 'inherit',
-                  background: '#5a7a3a',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 5,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                ◀ このツリーを優先配置
-              </button>
-              <div style={{ fontSize: 11, color: '#999', marginTop: 6, lineHeight: 1.6 }}>
-                選択ノードを頂点とする子孫ツリーを<br />
-                左側優先で自動整列します
-              </div>
             </div>
           </>
         )}
